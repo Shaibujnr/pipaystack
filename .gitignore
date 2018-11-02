@@ -1,0 +1,26 @@
+# byte-compiled
+__pycache__/
+*$py.class
+*.py[cdo]
+
+# packaging
+*.egg-info/
+build/
+sdist/
+dist/
+venv/
+*.egg
+
+# test / coverage
+.pytest_cache/
+.coverage.*
+.coverage
+.cache/
+.tox
+
+# misc
+.DS_Store
+.vscode/
+[._]tmp/
+*.log
+*.sqlite
