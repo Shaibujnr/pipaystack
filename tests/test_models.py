@@ -1,6 +1,6 @@
 import pytest
-import time
-from pipaystack.models import Paystack, Transaction, TransactionStatus, Customer
+from pipaystack.models import Paystack, Transaction, Customer
+from pipaystack.enum import TransactionStatus, ChargeType, Bank
 
 
 @pytest.mark.tryfirst
@@ -38,8 +38,7 @@ def test_initialize_transaction(ps):
     assert t.authorization_url is not None
 
 
-def test_initialize_transaction_with_reference(ps):
-    ref = str(int(round(time.time() * 1000)))
+def test_initialize_transaction_with_reference(ps, ref):
     t = Transaction.initialize(
         email = "test_initialize_with_reference@gmail.com",
         amount = 4500,
@@ -87,6 +86,162 @@ def test_verify_transaction(ps):
     assert t.id is not None
     assert t.status == TransactionStatus.SUCCESS
     assert t.id == tt.id
+
+
+def test_charge_start_method(ps):
+    from inspect import signature
+    email = "s.shaibu.jnr@gmail.com"
+    amount = 30000
+    card_charge = Transaction.charge(ChargeType.CARD, email, amount)
+    assert callable(card_charge.start)
+    sig = signature(card_charge.start)
+    assert len(sig.parameters) == 6
+    bank_charge = Transaction.charge(ChargeType.BANK, email, amount)
+    assert callable(bank_charge.start)
+    sig = signature(bank_charge.start)
+    assert len(sig.parameters) == 5
+
+
+def test_bank_charge_with_bank_enum(ps, ref):
+    email = "test_bank_charge_with_bank_enum@gmail.com"
+    amount = 450000
+    bank = Bank.ZENITH
+    account_number = "0000000000"
+    birthday = "1995-12-23"
+    otp = "123456"
+    bank_charge = Transaction.charge(ChargeType.BANK, email, amount)
+    ts = bank_charge.start(bank, account_number, reference=ref)
+    assert isinstance(ts, Transaction)
+    assert ts.reference == ref
+    assert ts.status == TransactionStatus.SEND_BIRTHDAY
+    ts.authorize_birthday(birthday)
+    assert ts.status == TransactionStatus.SEND_OTP
+    ts.authorize_otp(otp)
+    assert ts.status == TransactionStatus.SEND_OTP
+    ts.authorize_otp(otp)
+    assert ts.status == TransactionStatus.SUCCESS
+
+def test_bank_charge_with_bank_code(ps, ref):
+    email = "test_bank_charge_with_bank_code@gmail.com"
+    amount = 230980
+    account_number = "0000000000"
+    birthday = "1995-12-23"
+    otp = "123456"
+    bank_charge = Transaction.charge(ChargeType.BANK, email, amount)
+    ts = bank_charge.start(None, account_number, reference=ref, bank_code='057')
+    assert isinstance(ts, Transaction)
+    assert ts.reference == ref
+    assert ts.status == TransactionStatus.SEND_BIRTHDAY
+    ts.authorize_birthday(birthday)
+    assert ts.status == TransactionStatus.SEND_OTP
+    ts.authorize_otp(otp)
+    assert ts.status == TransactionStatus.SEND_OTP
+    ts.authorize_otp(otp)
+    assert ts.status == TransactionStatus.SUCCESS
+
+
+def test_bank_charge_with_wrong_bank_enum_and_correct_code(ps, ref):
+    email = "test_bank_charge_with_wrong_bank_enum_and_correct_code@gmail.com"
+    amount = 15700
+    bank = Bank.FCMB
+    account_number = "0000000000"
+    birthday = "1995-12-23"
+    otp = "123456"
+    bank_charge = Transaction.charge(ChargeType.BANK, email, amount)
+    ts = bank_charge.start(bank, account_number, reference=ref, bank_code='057')
+    assert isinstance(ts, Transaction)
+    assert ts.reference == ref
+    assert ts.status == TransactionStatus.SEND_BIRTHDAY
+    ts.authorize_birthday(birthday)
+    assert ts.status == TransactionStatus.SEND_OTP
+    ts.authorize_otp(otp)
+    assert ts.status == TransactionStatus.SEND_OTP
+    ts.authorize_otp(otp)
+    assert ts.status == TransactionStatus.SUCCESS
+
+
+def test_bank_charge_with_correct_bank_enum_and_wrong_code(ps, ref):
+    email = "test_bank_charge_with_correct_bank_enum_and_wrong_code@gmail.com"
+    amount = 15700
+    bank = Bank.ZENITH
+    account_number = "0000000000"
+    bank_charge = Transaction.charge(ChargeType.BANK, email, amount)
+    ts = bank_charge.start(bank, account_number, reference=ref, bank_code=Bank.GTB.value)
+    assert isinstance(ts, Transaction)
+    assert ts.reference == ref
+    assert ts.status == TransactionStatus.FAILED
+    
+
+def test_card_charge_with_no_validation(ps, future_year):
+    email = "test_card_charge_with_no_validation@gmail.com"
+    amount = 30000
+    card_charge = Transaction.charge(ChargeType.CARD, email, amount)
+    ts = card_charge.start('4084084084084081', '408', '01', future_year)
+    assert isinstance(ts, Transaction)
+    assert ts.status == TransactionStatus.SUCCESS
+
+
+def test_card_charge_with_pin_and_otp_validation(ps, ref, future_year):
+    email = 'test_card_charge_with_pin_and_otp_validation@gmail.com'
+    amount = 18700
+    pin = '1234'
+    otp = '123456'
+    card_charge = Transaction.charge(ChargeType.CARD, email, amount)
+    ts = card_charge.start('5060666666666666666', '123', '02', future_year, reference=ref)
+    assert isinstance(ts, Transaction)
+    assert ts.status == TransactionStatus.SEND_PIN 
+    ts.authorize_pin(pin)
+    assert ts.status == TransactionStatus.SEND_OTP
+    ts.authorize_otp(otp)
+    assert ts.status == TransactionStatus.SUCCESS
+
+
+def test_card_with_pin_validation(ps, ref, future_year):
+    email = 'test_card_charge_with_pin_validation@gmail.com'
+    amount = 1900
+    pin = '1111'
+    card_charge = Transaction.charge(ChargeType.CARD, email, amount)
+    ts = card_charge.start('507850785078507812', '081', '02', future_year, reference=ref)
+    assert isinstance(ts, Transaction)
+    assert ts.status == TransactionStatus.SEND_PIN 
+    ts.authorize_pin(pin)
+    assert ts.status == TransactionStatus.SUCCESS
+
+
+def test_card_charge_with_pin_phone_otp_validation(ps, ref, future_year):
+    email = 'test_card_charge_with_pin_phone_otp_validation@gmail.com'
+    amount = 4570
+    cn = "50785078507850784"
+    cvv = '884'
+    pin = '0000'
+    phone = '12390876544'
+    otp = '123456'
+    card_charge = Transaction.charge(ChargeType.CARD, email, amount)
+    ts = card_charge.start(cn, cvv, '02', future_year, reference=ref)
+    assert isinstance(ts, Transaction)
+    assert ts.status == TransactionStatus.SEND_PIN 
+    ts.authorize_pin(pin)
+    assert ts.status == TransactionStatus.SEND_PHONE
+    ts.authorize_phone(phone)
+    assert ts.status == TransactionStatus.SEND_OTP
+    ts.authorize_otp(otp)
+    assert ts.status == TransactionStatus.SUCCESS
+
+def test_card_charge_with_incomeplete_validation(ps, ref, future_year):
+    email = 'test_card_charge_with_incomplete_validation@gmail.com'
+    amount = 4570
+    cn = "50785078507850784"
+    cvv = '884'
+    pin = '0000'
+    phone = '12390876544'
+    otp = '123456'
+    card_charge = Transaction.charge(ChargeType.CARD, email, amount)
+    ts = card_charge.start(cn, cvv, '02', future_year, reference=ref)
+    assert isinstance(ts, Transaction)
+    assert ts.status == TransactionStatus.SEND_PIN 
+    ts.authorize_pin(pin)
+    assert ts.status == TransactionStatus.SEND_PHONE
+    ts.authorize_phone(phone)
 
 
 def test_customer_creation(ps):
