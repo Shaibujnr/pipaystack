@@ -1,9 +1,9 @@
 import pytest
 import time
-from pipaystack.models import Paystack, Transaction, TransactionStatus
+from pipaystack.models import Paystack, Transaction, TransactionStatus, Customer
 
 
-@pytest.mark.first
+@pytest.mark.tryfirst
 def test_paystack_singleton_not_initialized():
     with pytest.raises(Exception):
         p1 = Paystack()
@@ -88,3 +88,73 @@ def test_verify_transaction(ps):
     assert t.status == TransactionStatus.SUCCESS
     assert t.id == tt.id
 
+
+def test_customer_creation(ps):
+    email = 'johndoe@gmail.com'
+    if isinstance(Customer.get(email),Customer):
+        pytest.skip("Customer already exists")
+    c = Customer(email, "John", "Doe", "08012345678", from_test=True, hello='hi')
+    assert c.id is None
+    assert c.code is None
+    c.create()
+    assert c.id is not None
+    assert c.code is not None
+    assert c.metadata == {'from_test':True,'hello':'hi'}
+
+
+def test_customer_fetch(ps):
+    customers = Customer.fetch()
+    assert isinstance(customers, list)
+    assert len(customers) > 0
+    assert isinstance(customers[0], Customer)
+
+
+def test_customer_fetch_with_filter(ps):
+    cs = Customer.fetch(per_page=2)
+    assert isinstance(cs, list)
+    assert len(cs) == 2
+    assert isinstance(cs[0], Customer)
+    cs1 = Customer.fetch(per_page=1, page=1)
+    cs2 = Customer.fetch(per_page=1, page=2)
+    assert cs1[0] is not None
+    assert cs2[0] is not None
+    assert cs1[0].id != cs2[0].id
+
+
+def test_customer_get(ps):
+    tc = Customer.fetch(per_page=1, page=4)[0]
+    ec = Customer.get(tc.email)
+    cc = Customer.get(tc.code)
+    ic = Customer.get(tc.id)
+    assert ec.id == cc.id == ic.id == tc.id
+    assert ec.email == cc.email == ic.email == tc.email
+
+def test_get_customer_with_wrong_id(ps):
+    cc = Customer.get('NonethisIddoesnotexisteitherasemailorcodeorid')
+    assert cc is None
+
+def test_upddate_customer(ps):
+    c = Customer.fetch(per_page=1, page=4)[0]
+    msg = c.update(
+        first_name="UpdateFirstName",last_name="UpdateLastName",phone="updatephone123",extra='from_test',typ='update'
+    )
+    assert msg == "Customer Updated"
+    tc = Customer.get(c.id)
+    assert tc.first_name == "UpdateFirstName"
+    assert tc.last_name == "UpdateLastName"
+    assert tc.phone == "updatephone123"
+    assert tc.metadata == {'extra':'from_test', 'typ':'update'}
+
+
+def test_fetch_customer_transactions(ps):
+    c = Customer.get('s.shaibu.jnr@gmail.com')
+    ct = c.transactions
+    assert isinstance(ct, list)
+    assert len(ct) > 0
+    assert isinstance(ct[0], Transaction)
+
+
+def test_setting_customer_transactions(ps):
+    with pytest.raises(AttributeError):
+        c = Customer.get('s.shaibu.jnr@gmail.com')
+        c.transactions = [1,2,3]
